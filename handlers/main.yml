@@ -1,0 +1,10 @@
+- name: Restart Zabbix components
+  systemd:
+    name: "{{ item }}"
+    state: restarted
+    enabled: yes
+  loop:
+    - zabbix-server
+    - zabbix-agent
+    - nginx
+    - php7.4-fpm

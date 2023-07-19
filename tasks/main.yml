@@ -1,0 +1,79 @@
+---
+
+- name: Download Zabbix repository deb package
+  get_url:
+    url: "https://repo.zabbix.com/zabbix/{{ zabbix_version }}/{{ ansible_distribution | lower }}/pool/main/z/zabbix-release/zabbix-release_{{ zabbix_version }}-1+{{ ansible_distribution | lower }}{{ ansible_distribution_major_version }}_all.deb"
+    dest: "/tmp/zabbix-release_{{ zabbix_version }}-1+{{ ansible_distribution | lower }}{{ ansible_distribution_major_version }}_all.deb"
+
+- name: Install Zabbix repository deb package
+  apt:
+    deb: "/tmp/zabbix-release_{{ zabbix_version }}-1+{{ ansible_distribution | lower }}{{ ansible_distribution_major_version }}_all.deb"
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+
+- name: Install required packages
+  apt:
+    name:
+      - postgresql=13+225
+      - zabbix-server-pgsql
+      - zabbix-frontend-php
+      - php7.4-pgsql
+      - zabbix-nginx-conf
+      - zabbix-sql-scripts
+      - zabbix-agent
+      - python3-psycopg2
+      - acl
+    state: present
+
+- name: Create PostgreSQL user
+  become: true
+  become_user: postgres
+  postgresql_user:
+    db: postgres
+    name: zabbix
+    password: "{{ zabbix_db_password }}"
+
+- name: Create PostgreSQL database
+  become: yes
+  become_user: postgres
+  postgresql_db:
+    name: zabbix
+    owner: zabbix
+    encoding: UTF-8
+    lc_collate: C
+    lc_ctype: C
+    template: template0
+  register: postgres_db_creation
+
+- name: Load Zabbix database schema
+  become: yes
+  shell: zcat /usr/share/zabbix-sql-scripts/postgresql/server.sql.gz | sudo -u zabbix psql zabbix     
+  when: postgres_db_creation.changed
+
+- name: Configure Zabbix server
+  become: true
+  lineinfile:
+    path: /etc/zabbix/zabbix_server.conf
+    regexp: '^.*DBPassword=.*$'
+    line: "DBPassword={{ zabbix_db_password }}"
+  notify: Restart Zabbix components
+
+- name: Configure Nginx for Zabbix frontend
+  become: true
+  lineinfile:
+    path: /etc/nginx/conf.d/zabbix.conf
+    regexp: '^#\s*listen\s*8080;'
+    line: "listen 8080;"
+  notify: Restart Zabbix components
+
+- name: Configure Nginx server name
+  become: true
+  lineinfile:
+    path: /etc/nginx/conf.d/zabbix.conf
+    regexp: '^#\s*server_name\s*example.com;'
+    line: "server_name example.com;"
+  notify: Restart Zabbix components
+
+
